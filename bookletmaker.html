@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manga Booklet Printer</title>
+<style>
+body{font-family:Arial,sans-serif;background:linear-gradient(135deg,#f5f7ff 0%,#eef2ff 100%);margin:0;padding:24px;color:#1f2937;min-height:100vh}
+h1{margin:0 0 12px;font-size:2rem;color:#111827}
+.panel{background:#fff;padding:24px;border-radius:16px;margin:0 auto 20px;max-width:980px;box-shadow:0 12px 30px rgba(15,23,42,.08);border:1px solid #e5e7eb}
+.panel-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}
+.panel-header h2{margin:0 0 6px;font-size:1.3rem;color:#111827}
+.panel-header p{margin:0;color:#6b7280}
+.controls{display:grid;grid-template-columns:1.6fr .7fr;gap:16px;margin-bottom:16px}
+.field{display:flex;flex-direction:column;gap:6px;font-weight:600;color:#374151}
+.field input[type="number"]{padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;font-size:1rem;background:#fafafa}
+input[type="number"]:focus{outline:none;border-color:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.15)}
+.upload-zone{border:2px dashed #a5b4fc;border-radius:16px;padding:20px;text-align:center;background:linear-gradient(135deg,#f8faff 0%,#eef2ff 100%);transition:all .2s ease;min-height:140px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;overflow:hidden}
+.upload-zone:hover,.upload-zone.dragover{border-color:#4f46e5;background:linear-gradient(135deg,#eef2ff 0%,#e0e7ff 100%);transform:translateY(-1px)}
+.upload-zone input[type="file"]{position:absolute;inset:0;opacity:0;cursor:pointer}
+.upload-zone .zone-content{display:flex;flex-direction:column;align-items:center;gap:8px;color:#4338ca;pointer-events:none}
+.upload-zone .zone-title{font-size:1.1rem;font-weight:700}
+.upload-zone .zone-text{font-size:.95rem;color:#4b5563}
+.upload-zone .zone-button{padding:10px 16px;border-radius:999px;background:#4f46e5;color:#fff;font-weight:700}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+button{padding:10px 16px;margin:0;border:none;border-radius:999px;background:linear-gradient(135deg,#4f46e5,#4338ca);color:#fff;font-weight:700;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease;box-shadow:0 8px 18px rgba(79,70,229,.2)}
+button:hover{transform:translateY(-1px)}
+button:last-child{background:linear-gradient(135deg,#0f766e,#0f766e)}
+#output{display:flex;flex-direction:column;gap:16px;max-width:980px;margin:0 auto}
+.sheet{width:100%;max-width:297mm;height:auto;aspect-ratio:297/210;background:#fff;display:flex;border:1px solid #d1d5db;border-radius:12px;overflow:hidden;box-shadow:0 8px 20px rgba(15,23,42,.08);page-break-after:always;break-after:page}
+.slot{width:50%;height:100%;padding:8mm;display:flex;align-items:center;justify-content:center}
+.slot img{max-width:100%;max-height:100%;object-fit:contain}
+.blank{border:1px dashed #cbd5e1;color:#94a3b8;width:100%;height:100%;display:flex;align-items:center;justify-content:center;border-radius:10px;font-size:.95rem}
+.status{background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;color:#4b5563}
+.hint{margin:8px 0 0;color:#6b7280;font-size:.95rem}
+@page{size:A4 landscape;margin:5mm}
+@media print{
+ .panel,h1,.status,.hint,.controls,.actions{display:none!important}
+ body{margin:0;background:#fff;padding:0}
+ .sheet{border:none;box-shadow:none;border-radius:0;margin:0}
+}
+@media (max-width:700px){
+ .controls{grid-template-columns:1fr}
+ body{padding:16px}
+}
+</style>
+</head>
+<body>
+<h1>Manga Booklet Printer</h1>
+
+<div class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Prepare your booklet</h2>
+      <p>Upload your images in order and choose the total page count.</p>
+    </div>
+  </div>
+  <div class="controls">
+    <label class="field">
+      <span>Upload pages</span>
+      <label class="upload-zone" id="uploadZone" for="files">
+        <input type="file" id="files" multiple accept=".png,.jpg,.jpeg,.webp">
+        <div class="zone-content">
+          <div class="zone-button">Select files</div>
+          <div class="zone-title">Drag & drop your images here</div>
+          <div class="zone-text">or click to browse from your device</div>
+        </div>
+      </label>
+    </label>
+    <label class="field">
+      <span>Target pages</span>
+      <input type="number" id="pageCount" min="4" step="1" value="30">
+    </label>
+  </div>
+  <div class="actions">
+    <button onclick="generate()">Generate Layout</button>
+    <button onclick="window.print()">Print / Save PDF</button>
+  </div>
+  <div id="status" class="status">No files selected yet.</div>
+  <p class="hint">The page count is rounded up to the next multiple of 4 and blank pages are added automatically.</p>
+</div>
+
+<div id="output"></div>
+
+<script>
+function sortFiles(files){
+ return [...files].sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+}
+
+function fileToDataURL(file){
+ return new Promise(resolve=>{
+   const r=new FileReader();
+   r.onload=e=>resolve(e.target.result);
+   r.readAsDataURL(file);
+ });
+}
+
+function updateStatus(){
+ const files=[...document.getElementById('files').files];
+ const targetCount=parseInt(document.getElementById('pageCount').value,10);
+ const totalPages=Number.isNaN(targetCount)||targetCount<1 ? 0 : Math.ceil(targetCount/4)*4;
+ const status=document.getElementById('status');
+
+ if(files.length===0){
+   status.textContent='No files selected yet.';
+ }else if(totalPages){
+   status.textContent=`${files.length} file(s) selected. Layout will use ${totalPages} pages.`;
+ }else{
+   status.textContent=`${files.length} file(s) selected.`;
+ }
+}
+
+const uploadZone=document.getElementById('uploadZone');
+const fileInput=document.getElementById('files');
+
+uploadZone.addEventListener('dragover', e=>{ e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', ()=>uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', e=>{
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  if(e.dataTransfer.files.length){
+    const dataTransfer=new DataTransfer();
+    Array.from(e.dataTransfer.files).forEach(file=>dataTransfer.items.add(file));
+    fileInput.files=dataTransfer.files;
+    updateStatus();
+  }
+});
+
+fileInput.addEventListener('change', updateStatus);
+document.getElementById('pageCount').addEventListener('input', updateStatus);
+
+async function generate(){
+ const files=sortFiles([...document.getElementById('files').files]);
+ const targetCount=parseInt(document.getElementById('pageCount').value,10);
+
+ if(Number.isNaN(targetCount)||targetCount<1){ alert('Enter a valid page count.'); return; }
+
+ const totalPages=Math.ceil(targetCount/4)*4;
+ if(files.length>totalPages){ alert(`You uploaded ${files.length} images, but the layout can only use ${totalPages} pages.`); return; }
+
+ const pages={};
+ for(let i=0;i<totalPages;i++){
+   pages[i+1]=i<files.length ? await fileToDataURL(files[i]) : null;
+ }
+
+ const layout=[];
+ for(let i=0;i<totalPages/2;i++){
+   const leftPage=i%2===0 ? totalPages-i : i+1;
+   const rightPage=i%2===0 ? i+1 : totalPages-i;
+   layout.push([leftPage,rightPage]);
+ }
+
+ const out=document.getElementById('output');
+ out.innerHTML='';
+
+ layout.forEach(pair=>{
+   const sheet=document.createElement('div');
+   sheet.className='sheet';
+
+   pair.forEach(pg=>{
+      const slot=document.createElement('div');
+      slot.className='slot';
+
+      if(pages[pg]){
+        const img=document.createElement('img');
+        img.src=pages[pg];
+        slot.appendChild(img);
+      }else{
+        const b=document.createElement('div');
+        b.className='blank';
+        b.textContent='Blank Page '+pg;
+        slot.appendChild(b);
+      }
+      sheet.appendChild(slot);
+   });
+
+   out.appendChild(sheet);
+ });
+
+ alert(`Layout generated for ${totalPages} pages. Use Print / Save PDF.`);
+}
+</script>
+</body>
+</html>
